@@ -31,11 +31,13 @@ The packet contains the following top-level keys:
 The data flow is a well-defined sequence:
 
 1. **Client Initialization:** The Flutter app initializes its widget registry and generates its `WidgetCatalog`.
-2. **Initial UI Request:** The client requests the initial UI from the server, including sending the `WidgetCatalog` to the server.
-3. **Server Response:** The server responds with a `DynamicUIPacket`.
+2. **Initial UI Request:** The client requests the initial UI from the server. This request includes a reference to a pre-agreed catalog (by name and version) and any local, client-side additions to that catalog.
+3. **Server Response & Negotiation:** The server validates the catalog reference.
+   - If the catalog is known, the server merges any additions and responds with a `DynamicUIPacket`.
+   - If the catalog reference is unknown, the server responds with an error, prompting the client to resend its request with the complete catalog definition.
 4. **Client-Side Rendering:** The client validates the packet against its catalog, then builds the Flutter widget tree by processing the layout and applying state bindings.
 5. **User Interaction:** A user interacts with a widget (e.g., taps a button).
-6. **Event Transmission:** The client constructs and sends a lightweight `EventPayload` to the server.
+6. **Event Transmission:** The client constructs and sends a lightweight `EventPayload` to the server. This payload also includes the same catalog information as the initial request.
 7. **Server-Side Logic & Targeted Update:** The server processes the event and responds with a delta-only payload—either a `LayoutUpdate` to change the structure or a `StateUpdate` to change data.
 8. **Client-Side Patching:** The client applies the update, triggering targeted rebuilds of only the affected widgets.
 
@@ -46,25 +48,30 @@ sequenceDiagram
     participant Server
 
     rect rgba(128, 128, 128, 0.12)
-        note over User, Server: Initial Handshake & UI Render
+        note over User, Server: Initial UI Render
         User->>+Flutter Client: Launches App
         Flutter Client->>Flutter Client: 1. Initializes WidgetRegistry & Generates Catalog
-        Flutter Client->>+Server: 2. Initial Handshake (Sends Catalog + Client Version)
-        Server-->>-Flutter Client: 3. Handshake Acknowledged
 
-        Flutter Client->>+Server: 4. Requests Initial UI
-        Server-->>-Flutter Client: 5. Responds with DynamicUIPacket (Layout + State)
-        Note right of Flutter Client: 6. Validates packet, builds widget tree, <br/>and applies state bindings.
+        alt Catalog is known by server
+            Flutter Client->>+Server: 2. Requests Initial UI (Sends Catalog Reference + Additions)
+            Server-->>-Flutter Client: 3. Responds with DynamicUIPacket (Layout + State)
+        else Catalog is unknown by server
+            Flutter Client->>+Server: 2. Requests Initial UI (Sends Catalog Reference + Additions)
+            Server-->>-Flutter Client: 3a. Responds with "Unknown Catalog" Error
+            Flutter Client->>+Server: 3b. Re-sends request with Full Catalog
+            Server-->>-Flutter Client: 3c. Responds with DynamicUIPacket (Layout + State)
+        end
+        Note right of Flutter Client: 4. Validates packet, builds widget tree, <br/>and applies state bindings.
         Flutter Client-->>-User: Displays Full UI
     end
 
     loop Interaction & Update Cycle
-        User->>+Flutter Client: 7. Interacts with a rendered widget (e.g., tap)
-        Flutter Client->>+Server: 8. Transmits EventPayload
-        Note left of Server: 9. Processes event business logic <br/>and determines necessary UI changes.
-        Server-->>-Flutter Client: 10. Responds with Targeted Update (StateUpdate or LayoutUpdate)
-        Note right of Flutter Client: 11. Applies patch to internal state/layout <br/>and rebuilds only the affected widgets.
-        Flutter Client-->>-User: Displays Updated UI
+        User->>+Flutter Client: 5. Interacts with a rendered widget (e.g., tap)
+        Flutter Client->>+Server: 6. Transmits EventPayload (with Catalog Reference + Additions)
+        Note left of Server: 7. Processes event business logic <br/>and determines necessary UI changes.
+        Server-->>-Flutter Client: 8. Responds with Targeted Update (StateUpdate or LayoutUpdate)
+        Note right of Flutter Client: 9. Applies patch to internal state/layout <br/>and rebuilds only the affected widgets.
+      Flutter Client-->>-User: Displays Updated UI
     end
 ```
 
@@ -77,7 +84,7 @@ The `WidgetCatalog` is a JSON document that serves as a strict contract of the c
 The catalog explicitly declares the client's capabilities, enabling:
 
 - **Server-Side Validation:** The server can validate any `DynamicUIPacket` against the client's catalog before sending it.
-- **Versioning and Coexistence:** The server can store multiple catalog versions and generate compatible UI for different client versions.
+- **Versioning and Coexistence:** The server can support a set of known catalog versions, allowing it to generate compatible UI for different client versions without requiring the client to send its full capabilities on every request.
 - **Guided LLM Generation:** The catalog provides a structured schema that can be used to constrain the output of a Large Language Model, ensuring it only generates valid, renderable UI definitions.
 - **Formalized Data Structures:** It allows for defining complex data types, ensuring that `state` objects are well-formed and type-safe.
 
@@ -256,12 +263,24 @@ This small, predefined set of transformers adds significant declarative power wi
 
 ### **5.1. Client-to-Server: The `EventPayload`**
 
-When a user triggers an event, the client sends an `EventPayload` to the server.
+When a user triggers an event, or for the initial UI request, the client sends a payload to the server that includes information about its capabilities. For events, this is the `EventPayload`.
 
+To support a stateless server architecture, the client must identify its catalog of capabilities with each request. This is done using one of two strategies:
+
+1.  **By Reference:** The client sends a reference to a known base catalog, plus any local additions. This is the standard, lightweight mode of operation.
+2.  **By Value:** If the server does not recognize the catalog reference, it will reject the request. The client must then resend the request, this time embedding its complete catalog.
+
+The `EventPayload` is structured as follows:
+
+- `catalogReference`: An optional object identifying a pre-agreed base catalog.
+  - `name`: The name of the base catalog (e.g., "material").
+  - `version`: The semantic version of the base catalog (e.g., "1.2.1").
+- `catalogAdditions`: An optional, partial `WidgetCatalog` object containing any client-specific widgets or data types that augment the base catalog.
+- `fullCatalog`: An optional, complete `WidgetCatalog` object. This is sent only when the server does not recognize the `catalogReference` or when no base catalog is used.
 - `sourceNodeId`: The `id` of the `LayoutNode` that generated the event.
 - `eventName`: The name of the event (e.g., `onPressed`).
 - `timestamp`: An ISO 8601 string representing when the event occurred.
-- `arguments`: An optional object containing contextual data. The structure of this object **must** conform to the schema defined for this event in the `WidgetCatalog`.
+- `arguments`: An optional object containing contextual data. The structure of this object **must** conform to the schema defined for this event in the resolved `WidgetCatalog`.
 
 ### **5.2. Server-to-Client: The `StateUpdate` Payload**
 
@@ -342,18 +361,89 @@ For surgical modifications to the UI's structure, the server sends a `LayoutUpda
 
 This section provides the formal, consolidated, and valid JSON Schema definitions for the FCP framework.
 
-### **6.1. Communication Payloads Schema**
+### **6.1. FCP Payloads and Catalog Schema**
 
-This schema defines the objects that are actively exchanged between the client and server.
+This schema defines the objects that are actively exchanged between the client and server. It includes the `WidgetCatalog` definition, as the catalog is a potential part of the communication payload.
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/FCP-payloads-schema-v2.json",
-  "title": "FCP Communication Payloads Schema",
+  "title": "FCP Communication Payloads and Catalog Schema",
   "description": "A collection of schemas for data exchanged between client and server in the FCP framework.",
   "type": "object",
   "$defs": {
+    "WidgetDefinition": {
+      "type": "object",
+      "properties": {
+        "properties": {
+          "type": "object",
+          "description": "A JSON Schema object defining the properties for this widget."
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "description": "A JSON Schema defining the 'arguments' object for this event."
+          }
+        }
+      },
+      "required": ["properties"]
+    },
+    "WidgetCatalog": {
+      "type": "object",
+      "properties": {
+        "catalogVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "dataTypes": {
+          "type": "object",
+          "description": "A map of custom data type names to their JSON Schema definitions.",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "items": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/WidgetDefinition"
+          }
+        }
+      },
+      "required": ["catalogVersion", "items"]
+    },
+    "PartialWidgetCatalog": {
+      "type": "object",
+      "properties": {
+        "dataTypes": {
+          "type": "object",
+          "description": "A map of custom data type names to their JSON Schema definitions.",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "items": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/WidgetDefinition"
+          }
+        }
+      }
+    },
+    "CatalogReference": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        }
+      },
+      "required": ["name", "version"]
+    },
     "LayoutNode": {
       "type": "object",
       "properties": {
@@ -390,7 +480,9 @@ This schema defines the objects that are actively exchanged between the client a
         },
         "nodes": {
           "type": "array",
-          "items": { "$ref": "#/$defs/LayoutNode" }
+          "items": {
+            "$ref": "#/$defs/LayoutNode"
+          }
         }
       },
       "required": ["root", "nodes"]
@@ -402,19 +494,43 @@ This schema defines the objects that are actively exchanged between the client a
           "type": "string",
           "pattern": "^\\d+\\.\\d+\\.\\d+$"
         },
-        "layout": { "$ref": "#/$defs/Layout" },
-        "state": { "type": "object" },
-        "metadata": { "type": "object" }
+        "layout": {
+          "$ref": "#/$defs/Layout"
+        },
+        "state": {
+          "type": "object"
+        },
+        "metadata": {
+          "type": "object"
+        }
       },
       "required": ["formatVersion", "layout", "state"]
     },
     "EventPayload": {
       "type": "object",
       "properties": {
-        "sourceNodeId": { "type": "string" },
-        "eventName": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" },
-        "arguments": { "type": "object" }
+        "catalogReference": {
+          "$ref": "#/$defs/CatalogReference"
+        },
+        "catalogAdditions": {
+          "$ref": "#/$defs/PartialWidgetCatalog"
+        },
+        "fullCatalog": {
+          "$ref": "#/$defs/WidgetCatalog"
+        },
+        "sourceNodeId": {
+          "type": "string"
+        },
+        "eventName": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "arguments": {
+          "type": "object"
+        }
       },
       "required": ["sourceNodeId", "eventName", "timestamp"]
     },
@@ -430,14 +546,18 @@ This schema defines the objects that are actively exchanged between the client a
                 "type": "object",
                 "title": "Patch Operation",
                 "properties": {
-                  "op": { "const": "patch" },
+                  "op": {
+                    "const": "patch"
+                  },
                   "patch": {
                     "type": "object",
                     "properties": {
-                      "op": { "enum": ["add", "remove", "replace"] },
+                      "op": {
+                        "enum": ["add", "remove", "replace"]
+                      },
                       "path": {
                         "type": "string",
-                        "description": "A path to a value in the state. For lists, use 'key:value' to select an item (e.g., /products/sku:abc-123/price).",
+                        "description": "A path to a value in the state. For lists, use 'key:value' to select an item (e.g., /products/sku:abc-123/price). Where the key is the key used to identify a child, and the value is the identity.",
                         "pattern": "^(/([a-zA-Z0-9_-]+:[^/]+|[a-zA-Z0-9_-]+))+$"
                       },
                       "value": {}
@@ -451,13 +571,17 @@ This schema defines the objects that are actively exchanged between the client a
                 "type": "object",
                 "title": "List Append Operation",
                 "properties": {
-                  "op": { "const": "listAppend" },
+                  "op": {
+                    "const": "listAppend"
+                  },
                   "path": {
                     "type": "string",
                     "description": "A path to a list in the state.",
                     "pattern": "^(/([a-zA-Z0-9_-]+:[^/]+|[a-zA-Z0-9_-]+))+$"
                   },
-                  "items": { "type": "array" }
+                  "items": {
+                    "type": "array"
+                  }
                 },
                 "required": ["op", "path", "items"]
               },
@@ -465,14 +589,23 @@ This schema defines the objects that are actively exchanged between the client a
                 "type": "object",
                 "title": "List Remove Operation",
                 "properties": {
-                  "op": { "const": "listRemove" },
+                  "op": {
+                    "const": "listRemove"
+                  },
                   "path": {
                     "type": "string",
                     "description": "A path to a list in the state.",
                     "pattern": "^(/([a-zA-Z0-9_-]+:[^/]+|[a-zA-Z0-9_-]+))+$"
                   },
-                  "itemKey": { "type": "string" },
-                  "keys": { "type": "array", "items": { "type": "string" } }
+                  "itemKey": {
+                    "type": "string"
+                  },
+                  "keys": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
                 },
                 "required": ["op", "path", "itemKey", "keys"]
               },
@@ -480,14 +613,20 @@ This schema defines the objects that are actively exchanged between the client a
                 "type": "object",
                 "title": "List Update Operation",
                 "properties": {
-                  "op": { "const": "listUpdate" },
+                  "op": {
+                    "const": "listUpdate"
+                  },
                   "path": {
                     "type": "string",
                     "description": "A path to a list in the state.",
                     "pattern": "^(/([a-zA-Z0-9_-]+:[^/]+|[a-zA-Z0-9_-]+))+$"
                   },
-                  "itemKey": { "type": "string" },
-                  "items": { "type": "array" }
+                  "itemKey": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array"
+                  }
                 },
                 "required": ["op", "path", "itemKey", "items"]
               }
@@ -505,76 +644,68 @@ This schema defines the objects that are actively exchanged between the client a
           "items": {
             "type": "object",
             "properties": {
-              "op": { "type": "string", "enum": ["add", "remove", "replace"] },
+              "op": {
+                "type": "string",
+                "enum": ["add", "remove", "replace"]
+              },
               "nodes": {
                 "type": "array",
-                "items": { "$ref": "#/$defs/LayoutNode" }
+                "items": {
+                  "$ref": "#/$defs/LayoutNode"
+                }
               },
-              "nodeIds": { "type": "array", "items": { "type": "string" } },
-              "targetNodeId": { "type": "string" },
-              "targetProperty": { "type": "string" }
+              "nodeIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "targetNodeId": {
+                "type": "string"
+              },
+              "targetProperty": {
+                "type": "string"
+              }
             },
             "required": ["op"]
           }
         }
       },
       "required": ["operations"]
+    },
+    "UnknownCatalogError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "const": "UnknownCatalog"
+        },
+        "message": {
+          "type": "string"
+        },
+        "requestedReference": {
+          "$ref": "#/$defs/CatalogReference"
+        }
+      },
+      "required": ["error", "message"]
     }
   },
   "oneOf": [
-    { "$ref": "#/$defs/DynamicUIPacket" },
-    { "$ref": "#/$defs/EventPayload" },
-    { "$ref": "#/$defs/StateUpdate" },
-    { "$ref": "#/$defs/LayoutUpdate" }
-  ]
-}
-```
-
-### **6.2. Widget Catalog Schema**
-
-This schema defines the structure of the `WidgetCatalog.json` file. It is updated to include the `dataTypes` definition.
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.com/FCP-catalog-schema-v2.json",
-  "title": "FCP Widget Catalog Schema",
-  "description": "Defines the static widget, property, event, and data type capabilities of an FCP client.",
-  "type": "object",
-  "$defs": {
-    "WidgetDefinition": {
-      "type": "object",
-      "properties": {
-        "properties": {
-          "type": "object",
-          "description": "A JSON Schema object defining the properties for this widget."
-        },
-        "events": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "description": "A JSON Schema defining the 'arguments' object for this event."
-          }
-        }
-      },
-      "required": ["properties"]
-    }
-  },
-  "properties": {
-    "catalogVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
-    "dataTypes": {
-      "type": "object",
-      "description": "A map of custom data type names to their JSON Schema definitions.",
-      "additionalProperties": {
-        "type": "object"
-      }
+    {
+      "$ref": "#/$defs/DynamicUIPacket"
     },
-    "items": {
-      "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/WidgetDefinition" }
+    {
+      "$ref": "#/$defs/EventPayload"
+    },
+    {
+      "$ref": "#/$defs/StateUpdate"
+    },
+    {
+      "$ref": "#/$defs/LayoutUpdate"
+    },
+    {
+      "$ref": "#/$defs/UnknownCatalogError"
     }
-  },
-  "required": ["catalogVersion", "items"]
+  ]
 }
 ```
 
