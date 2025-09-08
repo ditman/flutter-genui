@@ -226,7 +226,7 @@ The `properties` map within a `LayoutNode` forges the connection between layout 
 
 **Supported Transformations:**
 
-- **`format`**: A string with a `{}` placeholder, which will be replaced by the value from the bound path.
+- **`format`**: A string with a `{}` placeholder, which will be replaced by a string representation of the value from the bound path.
 
   - Example: `{"$bind": "text", "format": "Todo: {}"}` (Relative path)
 
@@ -248,6 +248,8 @@ The `properties` map within a `LayoutNode` forges the connection between layout 
 
 This small, predefined set of transformers adds significant declarative power without the security risks of a full expression language.
 
+In the future, other transformations could be added, such as defining a query, and then have that expand to the results of the query against a database.
+
 ## **Section 5: Event Handling**
 
 ### **5.1. Client-to-Server: The `EventPayload`**
@@ -259,7 +261,7 @@ The `EventPayload` is structured as follows:
 - `catalogReference`: An optional object identifying a predefined base catalog.
   - `name`: The name of the base catalog (e.g., "material").
   - `version`: The semantic version of the base catalog (e.g., "1.2.1").
-- `catalog`: An optional, partial `WidgetCatalog` object. If `catalogReference` is provided, this contains any client-specific additions or overrides to the base catalog. If `catalogReference` is omitted, this should contain the full widget catalog.
+- `catalog`: An optional `WidgetCatalog` object. If `catalogReference` is provided, this contains any client-specific additions or overrides to the base catalog. If `catalogReference` is omitted, this should contain the full widget catalog that the client supports.
 - `sourceNodeId`: The `id` of the `LayoutNode` that generated the event.
 - `eventName`: The name of the event (e.g., `onPressed`).
 - `timestamp`: An ISO 8601 string representing when the event occurred.
