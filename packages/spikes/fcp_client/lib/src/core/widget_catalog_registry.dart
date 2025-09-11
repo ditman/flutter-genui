@@ -76,6 +76,13 @@ class WidgetCatalogRegistry {
     return _registeredWidgets.containsKey(type);
   }
 
+  /// Returns a sorted list of all registered widget type names.
+  List<String> getRegisteredWidgetTypes() {
+    final List<String> keys = _registeredWidgets.keys.toList();
+    keys.sort();
+    return keys;
+  }
+
   /// Generates a [WidgetCatalog] from all the registered widgets.
   ///
   /// This method iterates through all the `CatalogItem` instances and

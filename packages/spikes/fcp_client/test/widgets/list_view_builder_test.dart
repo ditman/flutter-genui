@@ -21,13 +21,16 @@ void main() {
       registry.register(
         CatalogItem(
           name: 'Text',
-          builder: (context, node, properties, children) =>
-              Text(properties['data'] as String? ?? ''),
+          builder:
+              (
+                BuildContext context,
+                LayoutNode node,
+                Map<String, Object?> properties,
+                Map<String, List<Widget>> children,
+              ) => Text(properties['data'] as String? ?? ''),
           definition: WidgetDefinition(
             properties: ObjectSchema(
-              properties: {
-                'data': Schema.string(),
-              },
+              properties: <String, Schema>{'data': Schema.string()},
             ),
           ),
         ),
@@ -35,12 +38,16 @@ void main() {
       registry.register(
         CatalogItem(
           name: 'Column',
-          builder: (context, node, properties, children) => Column(
-            children: children['children'] ?? [],
-          ),
+          builder:
+              (
+                BuildContext context,
+                LayoutNode node,
+                Map<String, Object?> properties,
+                Map<String, List<Widget>> children,
+              ) => Column(children: children['children'] ?? <Widget>[]),
           definition: WidgetDefinition(
             properties: ObjectSchema(
-              properties: {
+              properties: <String, Schema>{
                 'children': Schema.list(items: Schema.string()),
               },
             ),
@@ -50,14 +57,16 @@ void main() {
       registry.register(
         CatalogItem(
           name: 'ListItem',
-          builder: (context, node, properties, children) => ListTile(
-            title: Text(properties['text'] as String? ?? ''),
-          ),
+          builder:
+              (
+                BuildContext context,
+                LayoutNode node,
+                Map<String, Object?> properties,
+                Map<String, List<Widget>> children,
+              ) => ListTile(title: Text(properties['text'] as String? ?? '')),
           definition: WidgetDefinition(
             properties: ObjectSchema(
-              properties: {
-                'text': Schema.string(),
-              },
+              properties: <String, Schema>{'text': Schema.string()},
             ),
           ),
         ),
@@ -68,8 +77,9 @@ void main() {
       );
     });
 
-    testWidgets('renders a list of items from state',
-        (WidgetTester tester) async {
+    testWidgets('renders a list of items from state', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -91,8 +101,9 @@ void main() {
       expect(find.text('Item 2'), findsOneWidget);
     });
 
-    testWidgets('updates the list when state changes',
-        (WidgetTester tester) async {
+    testWidgets('updates the list when state changes', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -122,8 +133,9 @@ void main() {
       expect(find.text('Item 2'), findsOneWidget);
     });
 
-    testWidgets('displays error if itemTemplate is missing',
-        (WidgetTester tester) async {
+    testWidgets('displays error if itemTemplate is missing', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -141,7 +153,7 @@ void main() {
       streamController.add('{"messageType": "LayoutRoot", "rootId": "root"}');
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('is missing itemTemplate'), findsOneWidget);
+      expect(find.textContaining('Missing `itemTemplate`'), findsOneWidget);
     });
   });
 }

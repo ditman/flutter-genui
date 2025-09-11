@@ -138,6 +138,17 @@ class _GenUiHomePageState extends State<GenUiHomePage> {
                             ),
                           );
                         },
+                        onError: (error) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: Colors.red.shade100,
+                              content: Text(
+                                'Error: ${error.errorType}: ${error.message}',
+                                style: TextStyle(color: Colors.red.shade900),
+                              ),
+                            ),
+                          );
+                        },
                       ),
               ),
             ),

@@ -52,22 +52,21 @@ void main() {
       expect(interpreter.isReadyToRender, isFalse);
     });
 
-    testWidgets(
-      'processes multiple Layout messages and merges nodes',
-      (WidgetTester tester) async {
-        streamController.add(
-          '{"messageType": "Layout", "nodes": [{"id": "node1", "type": "Text"}]}',
-        );
-        await tester.pump();
-        streamController.add(
-          '{"messageType": "Layout", "nodes": [{"id": "node2", "type": "Column"}]}',
-        );
-        streamController.add('{"messageType": "LayoutRoot", "rootId": "node1"}');
-        await tester.pump();
-        expect(interpreter.isReadyToRender, isTrue);
-        expect(interpreter.currentLayout!.nodes.length, 2);
-      },
-    );
+    testWidgets('processes multiple Layout messages and merges nodes', (
+      WidgetTester tester,
+    ) async {
+      streamController.add(
+        '{"messageType": "Layout", "nodes": [{"id": "node1", "type": "Text"}]}',
+      );
+      await tester.pump();
+      streamController.add(
+        '{"messageType": "Layout", "nodes": [{"id": "node2", "type": "Column"}]}',
+      );
+      streamController.add('{"messageType": "LayoutRoot", "rootId": "node1"}');
+      await tester.pump();
+      expect(interpreter.isReadyToRender, isTrue);
+      expect(interpreter.currentLayout!.nodes.length, 2);
+    });
 
     testWidgets(
       'processes LayoutRoot and sets isReadyToRender when root is buffered',

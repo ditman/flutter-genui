@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../core/gsp_interpreter.dart';
 import '../core/widget_catalog_registry.dart';
 import '../models/models.dart';
+import '../models/render_error.dart';
 import '../models/streaming_models.dart';
 import 'fcp_provider.dart';
 
@@ -28,6 +29,7 @@ class GenUiView extends StatefulWidget {
     required this.interpreter,
     required this.registry,
     this.onEvent,
+    this.onError,
   });
 
   /// The interpreter that processes the GSP stream.
@@ -39,6 +41,9 @@ class GenUiView extends StatefulWidget {
   /// A callback function that is invoked when an event is triggered by a
   /// widget.
   final ValueChanged<ClientRequest>? onEvent;
+
+  /// A callback function that is invoked when a rendering error occurs.
+  final ValueChanged<RenderError>? onError;
 
   @override
   State<GenUiView> createState() => _GenUiViewState();
@@ -77,6 +82,7 @@ class _GenUiViewState extends State<GenUiView> {
     }
     return FcpProvider(
       onEvent: widget.onEvent,
+      onError: widget.onError,
       child: _LayoutEngine(
         interpreter: widget.interpreter,
         registry: widget.registry,
@@ -101,11 +107,27 @@ class _LayoutEngine extends StatelessWidget {
     String nodeId, [
     Set<String> visited = const <String>{},
   ]) {
+    final ValueChanged<RenderError>? onError = FcpProvider.of(context)?.onError;
     if (visited.contains(nodeId)) {
-      return _ErrorWidget(
-        'Cyclical layout detected. Node "$nodeId" is already in the build '
-        'path.',
+      const String title = 'Layout Cycle Detected';
+      const String message =
+          'The widget is part of a circular dependency. This usually happens '
+          'when a widget is set as its own ancestor (e.g., a `Column`\'s '
+          '`children` property refers to the `Column` itself, or one of its '
+          'parents).\n\n'
+          'To fix this, review the `children` properties of the widgets in the '
+          'layout and ensure that a widget\'s ID does not appear in the '
+          '`children` list of itself or any of its descendants.';
+      onError?.call(
+        RenderError(
+          errorType: title,
+          message: message,
+          sourceNodeId: nodeId,
+          fullLayout: interpreter.currentLayout!,
+          currentState: interpreter.currentState,
+        ),
       );
+      return _ErrorWidget(title, message);
     }
     final Set<String> currentPath = <String>{...visited, nodeId};
 
@@ -119,9 +141,25 @@ class _LayoutEngine extends StatelessWidget {
 
     final CatalogWidgetBuilder? builder = registry.getBuilder(node.type);
     if (builder == null) {
-      return _ErrorWidget(
-        'No builder registered for widget type "${node.type}".',
+      final String availableTypes = registry.getRegisteredWidgetTypes().join(
+        ', ',
       );
+      const String title = 'Unknown Widget Type';
+      final String message =
+          'The layout specified a widget of type "${node.type}", but no '
+          'corresponding widget builder was found in the client\'s catalog.\n\n'
+          'Please use one of the following registered widget types: '
+          '$availableTypes. Check for typos in the \'type\' property.';
+      onError?.call(
+        RenderError(
+          errorType: title,
+          message: message,
+          sourceNodeId: node.id,
+          fullLayout: interpreter.currentLayout!,
+          currentState: interpreter.currentState,
+        ),
+      );
+      return _ErrorWidget(title, message);
     }
 
     final Map<String, Object?> resolvedProperties = _resolveProperties(
@@ -163,6 +201,7 @@ class _LayoutEngine extends StatelessWidget {
     LayoutNode node,
     Set<String> visited,
   ) {
+    final ValueChanged<RenderError>? onError = FcpProvider.of(context)?.onError;
     final Map<String, Object?> resolvedProperties = _resolveProperties(
       node,
       null,
@@ -172,9 +211,23 @@ class _LayoutEngine extends StatelessWidget {
     final LayoutNode? itemTemplate = node.itemTemplate;
 
     if (itemTemplate == null) {
-      return _ErrorWidget(
-        'ListViewBuilder "${node.id}" is missing itemTemplate.',
+      const String title = 'Missing `itemTemplate`';
+      final String message =
+          'The `ListViewBuilder` with ID "${node.id}" must have an '
+          '`itemTemplate` property.\n\n'
+          'To fix this, add an `itemTemplate` property to the '
+          '`ListViewBuilder` node. The value should be a complete LayoutNode '
+          'object that defines the template for each item in the list.';
+      onError?.call(
+        RenderError(
+          errorType: title,
+          message: message,
+          sourceNodeId: node.id,
+          fullLayout: interpreter.currentLayout!,
+          currentState: interpreter.currentState,
+        ),
       );
+      return _ErrorWidget(title, message);
     }
 
     return ListView.builder(
@@ -194,13 +247,32 @@ class _LayoutEngine extends StatelessWidget {
     Map<String, Object?> itemData,
     Set<String> visited,
   ) {
+    final ValueChanged<RenderError>? onError = FcpProvider.of(context)?.onError;
     final CatalogWidgetBuilder? builder = registry.getBuilder(
       templateNode.type,
     );
     if (builder == null) {
-      return _ErrorWidget(
-        'No builder for itemTemplate type "${templateNode.type}".',
+      final String availableTypes = registry.getRegisteredWidgetTypes().join(
+        ', ',
       );
+      const String title = 'Unknown Widget Type in `itemTemplate`';
+      final String message =
+          'The `itemTemplate` for the `ListViewBuilder` specified a widget of '
+          'type "${templateNode.type}", but no corresponding widget builder '
+          'was found in the client\'s catalog.\n\n'
+          'Please use one of the following registered widget types for the '
+          'item template: $availableTypes. Check for typos in the \'type\' '
+          'property of the itemTemplate.';
+      onError?.call(
+        RenderError(
+          errorType: title,
+          message: message,
+          sourceNodeId: templateNode.id,
+          fullLayout: interpreter.currentLayout!,
+          currentState: interpreter.currentState,
+        ),
+      );
+      return _ErrorWidget(title, message);
     }
 
     final Map<String, Object?> resolvedProperties = _resolveProperties(
@@ -324,22 +396,42 @@ class _LayoutEngine extends StatelessWidget {
 }
 
 class _ErrorWidget extends StatelessWidget {
-  const _ErrorWidget(this.message);
+  const _ErrorWidget(this.title, this.message);
+  final String title;
   final String message;
 
   @override
   Widget build(BuildContext context) {
-    log('Error: $message');
+    final String fullMessage = '$title: $message';
+    log('Error: $fullMessage');
     return Material(
       type: MaterialType.transparency,
       child: Center(
         child: Container(
+          margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.all(16),
-          color: Colors.red.shade100,
-          child: Text(
-            'GenUI Error: $message',
-            style: TextStyle(color: Colors.red.shade900),
-            textAlign: TextAlign.center,
+          decoration: BoxDecoration(
+            color: Colors.red.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.red.shade200),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                'GenUI Error: $title',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(color: Colors.red.shade900),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: TextStyle(color: Colors.red.shade900),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       ),

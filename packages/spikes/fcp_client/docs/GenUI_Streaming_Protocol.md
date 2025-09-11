@@ -301,10 +301,16 @@ The `ClientRequest` is structured as follows:
   - `arguments`: An optional object with event-specific data.
 - `layout`: The complete `Layout` object of the current UI. Sent when `event` is present.
 - `state`: The complete `state` object of the current UI. Sent when `event` is present.
+- `renderError`: An optional object describing a client-side rendering error. Its presence indicates that the previously supplied layout failed to render.
+  - `errorType`: A string identifying the type of error (e.g., `UnknownWidgetType`).
+  - `message`: A detailed, human-readable message about the error.
+  - `sourceNodeId`: The `id` of the `LayoutNode` that caused the error.
+  - `fullLayout`: The complete `Layout` object that failed to render.
+  - `currentState`: The `state` object at the time of the error.
 
 ### **5.2. Server-to-Client: Streamed UI Update**
 
-After processing an event, the server responds with a new JSONL stream. This stream contains the complete definition for the new UI, allowing the client to progressively render the updated view.
+After processing an event or a `renderError`, the server responds with a new JSONL stream. This stream contains the complete definition for the new UI, allowing the client to progressively render the updated view.
 
 ## **Section 6: Complete JSON Schema Definitions**
 
@@ -435,6 +441,17 @@ This section provides the formal, consolidated, and valid JSON Schema definition
       },
       "required": ["sourceNodeId", "eventName", "timestamp"]
     },
+    "RenderError": {
+      "type": "object",
+      "properties": {
+        "errorType": { "type": "string" },
+        "message": { "type": "string" },
+        "sourceNodeId": { "type": "string" },
+        "fullLayout": { "$ref": "#/$defs/Layout" },
+        "currentState": { "type": "object" }
+      },
+      "required": ["errorType", "message", "sourceNodeId", "fullLayout", "currentState"]
+    },
     "ClientRequest": {
       "type": "object",
       "properties": {
@@ -442,6 +459,7 @@ This section provides the formal, consolidated, and valid JSON Schema definition
         "catalogReference": { "$ref": "#/$defs/CatalogReference" },
         "catalog": { "$ref": "#/$defs/PartialWidgetCatalog" },
         "event": { "$ref": "#/$defs/Event" },
+        "renderError": { "$ref": "#/$defs/RenderError" },
         "layout": { "$ref": "#/$defs/Layout" },
         "state": { "type": "object" }
       }

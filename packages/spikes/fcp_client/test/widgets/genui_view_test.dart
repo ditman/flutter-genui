@@ -21,13 +21,16 @@ void main() {
       registry.register(
         CatalogItem(
           name: 'Text',
-          builder: (context, node, properties, children) =>
-              Text(properties['data'] as String? ?? ''),
+          builder:
+              (
+                BuildContext context,
+                LayoutNode node,
+                Map<String, Object?> properties,
+                Map<String, List<Widget>> children,
+              ) => Text(properties['data'] as String? ?? ''),
           definition: WidgetDefinition(
             properties: ObjectSchema(
-              properties: {
-                'data': Schema.string(),
-              },
+              properties: <String, Schema>{'data': Schema.string()},
             ),
           ),
         ),
@@ -35,12 +38,16 @@ void main() {
       registry.register(
         CatalogItem(
           name: 'Column',
-          builder: (context, node, properties, children) => Column(
-            children: children['children'] ?? [],
-          ),
+          builder:
+              (
+                BuildContext context,
+                LayoutNode node,
+                Map<String, Object?> properties,
+                Map<String, List<Widget>> children,
+              ) => Column(children: children['children'] ?? <Widget>[]),
           definition: WidgetDefinition(
             properties: ObjectSchema(
-              properties: {
+              properties: <String, Schema>{
                 'children': Schema.list(items: Schema.string()),
               },
             ),
@@ -53,8 +60,9 @@ void main() {
       );
     });
 
-    testWidgets('shows loading indicator until ready',
-        (WidgetTester tester) async {
+    testWidgets('shows loading indicator until ready', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GenUiView(interpreter: interpreter, registry: registry),
@@ -82,8 +90,9 @@ void main() {
       expect(find.text('Hello'), findsOneWidget);
     });
 
-    testWidgets('displays error for cyclical layout',
-        (WidgetTester tester) async {
+    testWidgets('displays error for cyclical layout', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GenUiView(interpreter: interpreter, registry: registry),
@@ -99,11 +108,12 @@ void main() {
       streamController.add('{"messageType": "LayoutRoot", "rootId": "root"}');
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Cyclical layout detected'), findsOneWidget);
+      expect(find.textContaining('Layout Cycle Detected'), findsOneWidget);
     });
 
-    testWidgets('displays error for missing builder',
-        (WidgetTester tester) async {
+    testWidgets('displays error for missing builder', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GenUiView(interpreter: interpreter, registry: registry),
@@ -111,7 +121,7 @@ void main() {
       );
 
       streamController.add(
-        '{"messageType": "StreamHeader", "formatVersion": "1.0.0", "initialState": {}}',
+        '{"messageType": "StreamHeader", "formatVersion": "1.o.0", "initialState": {}}',
       );
       streamController.add(
         '{"messageType": "Layout", "nodes": [{"id": "root", "type": "MissingWidget"}]}',
@@ -119,13 +129,12 @@ void main() {
       streamController.add('{"messageType": "LayoutRoot", "rootId": "root"}');
       await tester.pumpAndSettle();
 
-      expect(
-          find.textContaining('No builder registered for widget type'),
-          findsOneWidget);
+      expect(find.textContaining('Unknown Widget Type'), findsOneWidget);
     });
 
-    testWidgets('resolves string interpolation binding',
-        (WidgetTester tester) async {
+    testWidgets('resolves string interpolation binding', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GenUiView(interpreter: interpreter, registry: registry),
@@ -163,8 +172,9 @@ void main() {
       expect(find.text('World'), findsOneWidget);
     });
 
-    testWidgets('updates layout by adding a widget',
-        (WidgetTester tester) async {
+    testWidgets('updates layout by adding a widget', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GenUiView(interpreter: interpreter, registry: registry),
@@ -193,8 +203,9 @@ void main() {
       expect(find.text('Child 2'), findsOneWidget);
     });
 
-    testWidgets('updates layout by removing a widget',
-        (WidgetTester tester) async {
+    testWidgets('updates layout by removing a widget', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GenUiView(interpreter: interpreter, registry: registry),
@@ -280,13 +291,19 @@ void main() {
       registry.register(
         CatalogItem(
           name: 'Column',
-          builder: (context, node, properties, children) => Column(
-            key: Key(node.id),
-            children: children['children'] ?? [],
-          ),
+          builder:
+              (
+                BuildContext context,
+                LayoutNode node,
+                Map<String, Object?> properties,
+                Map<String, List<Widget>> children,
+              ) => Column(
+                key: Key(node.id),
+                children: children['children'] ?? <Widget>[],
+              ),
           definition: WidgetDefinition(
             properties: ObjectSchema(
-              properties: {
+              properties: <String, Schema>{
                 'children': Schema.list(items: Schema.string()),
               },
             ),
@@ -312,15 +329,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-          find.descendant(
-              of: find.byKey(const Key('col1')),
-              matching: find.text('Movable')),
-          findsOneWidget);
+        find.descendant(
+          of: find.byKey(const Key('col1')),
+          matching: find.text('Movable'),
+        ),
+        findsOneWidget,
+      );
       expect(
-          find.descendant(
-              of: find.byKey(const Key('col2')),
-              matching: find.text('Movable')),
-          findsNothing);
+        find.descendant(
+          of: find.byKey(const Key('col2')),
+          matching: find.text('Movable'),
+        ),
+        findsNothing,
+      );
 
       // Now move the text to the second column.
       streamController.add(
@@ -329,15 +350,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-          find.descendant(
-              of: find.byKey(const Key('col1')),
-              matching: find.text('Movable')),
-          findsNothing);
+        find.descendant(
+          of: find.byKey(const Key('col1')),
+          matching: find.text('Movable'),
+        ),
+        findsNothing,
+      );
       expect(
-          find.descendant(
-              of: find.byKey(const Key('col2')),
-              matching: find.text('Movable')),
-          findsOneWidget);
+        find.descendant(
+          of: find.byKey(const Key('col2')),
+          matching: find.text('Movable'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('reorders children in a list', (WidgetTester tester) async {
@@ -356,7 +381,7 @@ void main() {
       streamController.add('{"messageType": "LayoutRoot", "rootId": "root"}');
       await tester.pumpAndSettle();
 
-      final firstText = tester.widget<Text>(find.byType(Text).at(0));
+      final Text firstText = tester.widget<Text>(find.byType(Text).at(0));
       expect(firstText.data, 'A');
 
       // Now reorder the children.
@@ -365,12 +390,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final newFirstText = tester.widget<Text>(find.byType(Text).at(0));
+      final Text newFirstText = tester.widget<Text>(find.byType(Text).at(0));
       expect(newFirstText.data, 'B');
     });
 
-    testWidgets('handles deeply nested state updates',
-        (WidgetTester tester) async {
+    testWidgets('handles deeply nested state updates', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GenUiView(interpreter: interpreter, registry: registry),
@@ -395,12 +421,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Updated City'), findsOneWidget);
-      expect(interpreter.currentState['user'],
-          isA<Map>().having((m) => m['name'], 'name', 'Alice'));
+      expect(
+        interpreter.currentState['user'],
+        isA<Map>().having(
+          (Map<dynamic, dynamic> m) => m['name'],
+          'name',
+          'Alice',
+        ),
+      );
     });
 
-    testWidgets('handles state value becoming null',
-        (WidgetTester tester) async {
+    testWidgets('handles state value becoming null', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GenUiView(interpreter: interpreter, registry: registry),
