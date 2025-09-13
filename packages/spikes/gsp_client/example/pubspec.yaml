@@ -1,0 +1,27 @@
+name: gsp_client_example
+description: An example app for the gsp_client package.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  gsp_client:
+    path: ../
+  cupertino_icons: ^1.0.8
+  flutter_driver:
+    sdk: flutter
+  dart_schema_builder:
+    path: ../../../dart_schema_builder
+
+dev_dependencies:
+  test: ^1.26.2
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
